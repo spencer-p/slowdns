@@ -38,25 +38,27 @@ var (
 
 func main() {
 	envconfig.MustProcess("", &cfg)
-	log.Printf("Configured: %+v", cfg)
-
-	// Serve metrics.
-	metricsSrv := &http.Server{
-		Handler:      promhttp.Handler(),
-		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.MetricsPort),
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
-	}
-	go func() {
-		log.Printf("Listening and serving metrics on %s", metricsSrv.Addr)
-		log.Fatal(metricsSrv.ListenAndServe())
-	}()
-
 	dnsIPs, err := lookupDNSIPs(cfg.DNSServers)
 	if err != nil {
 		log.Fatal("Failed to resolve DNS endpoints:", err)
 	}
 	cfg.DNSEndpoints = dnsIPs
+	log.Printf("Configured: %+v", cfg)
+
+	// Serve metrics and health.
+	mux := http.NewServeMux()
+	metricsSrv := &http.Server{
+		Handler:      mux,
+		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.MetricsPort),
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/health", healthHandler)
+	go func() {
+		log.Printf("Listening and serving metrics on %s", metricsSrv.Addr)
+		log.Fatal(metricsSrv.ListenAndServe())
+	}()
 
 	ip := net.ParseIP(cfg.IP)
 	laddr := net.UDPAddr{
@@ -138,6 +140,8 @@ func proxy(conn *net.UDPConn, request []byte, addr *net.UDPAddr, proxyAddr *net.
 	if waitChan != nil {
 		<-waitChan
 	}
+	// Flip the z bit, for fun. This makes query responses more identifiable.
+	buf[3] ^= 0x40
 	_, err = conn.WriteToUDP(buf[:n], addr)
 	return err
 }
@@ -202,4 +206,48 @@ func dnsID(packet []byte) uint16 {
 		return 0
 	}
 	return uint16(packet[0]) | (uint16(packet[1]) << 8)
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	err := selfHealth()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, "Failed to issue DNS request to self: %v\n", err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "ok\n")
+}
+
+func selfHealth() error {
+	// A DNS requet for google.com IP.
+	req := []byte{0x24, 0x58, 0x1, 0x20, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
+		0x6, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x3, 0x63, 0x6f, 0x6d, 0x0, 0x0,
+		0x1, 0x0, 0x1, 0x0, 0x0, 0x29, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc, 0x0,
+		0xa, 0x0, 0x8, 0xf2, 0xf4, 0x43, 0x16, 0xc, 0x5a, 0x67, 0x51}
+
+	self := net.UDPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: cfg.Port,
+	}
+	conn, err := net.DialUDP("udp", nil, &self)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Write(req)
+	if err != nil {
+		return err
+	}
+
+	buf := alloc.Get().([]byte)
+	defer alloc.Put(buf)
+	buflen, err := conn.Read(buf)
+	if err != nil {
+		return err
+	}
+	if buflen <= 0 {
+		return errors.New("short response")
+	}
+	// Should check flags section for error.
+	return nil
 }

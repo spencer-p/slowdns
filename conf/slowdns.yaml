@@ -25,24 +25,6 @@ spec:
   type: LoadBalancer
   # type: NodePort
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: slowdns-metrics
-  namespace: pihole
-  labels:
-    app: slowdns
-spec:
-  ports:
-  - name: metrics
-    protocol: TCP
-    port: 8081
-    targetPort: metrics
-  selector:
-    app: slowdns
-  sessionAffinity: None
-  type: ClusterIP
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,6 +53,12 @@ spec:
         - containerPort: 8081
           name: metrics
           protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: metrics
+          initialDelaySeconds: 3
+          periodSeconds: 3
         env:
         - name: DNSSERVERS
           # value: "1.1.1.1"
@@ -99,3 +87,21 @@ spec:
   selector:
     matchLabels:
       app: slowdns
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slowdns-metrics
+  namespace: pihole
+  labels:
+    app: slowdns
+spec:
+  ports:
+  - name: metrics
+    protocol: TCP
+    port: 8081
+    targetPort: metrics
+  selector:
+    app: slowdns
+  sessionAffinity: None
+  type: ClusterIP
