@@ -211,6 +211,7 @@ func dnsID(packet []byte) uint16 {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	err := selfHealth()
 	if err != nil {
+		log.Printf("Failed healthcheck: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Failed to issue DNS request to self: %v\n", err)
 		return
@@ -245,9 +246,12 @@ func selfHealth() error {
 	if err != nil {
 		return err
 	}
-	if buflen <= 0 {
+	if buflen < 12 {
 		return errors.New("short response")
 	}
-	// Should check flags section for error.
+	// Normally the response could should be 0x8180, but we set the Z bit :).
+	if responseCode := fmt.Sprintf("%x", buf[2:4]); responseCode != "81c0" {
+		return fmt.Errorf("response code was 0x%s, not 0x81c0", responseCode)
+	}
 	return nil
 }
