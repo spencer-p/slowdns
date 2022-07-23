@@ -14,10 +14,12 @@ import (
 )
 
 type Config struct {
-	Port        int `default:"8053"`
-	MetricsPort int
-	BlockedURLS []string
-	DNSServers  []string
+	Port         int `default:"8053"`
+	IP           string
+	MetricsPort  int
+	BlockedURLS  []string
+	DNSServers   []string
+	DNSEndpoints []*net.UDPAddr
 }
 
 const (
@@ -33,11 +35,21 @@ var (
 )
 
 func main() {
-	var cfg Config
 	envconfig.MustProcess("", &cfg)
 	log.Printf("Configured: %v", cfg)
 
-	laddr := net.UDPAddr{Port: cfg.Port}
+	dnsIPs, err := lookupDNSIPs(cfg.DNSServers)
+	if err != nil {
+		log.Fatal("Failed to resolve DNS endpoints:", err)
+	}
+	cfg.DNSEndpoints = dnsIPs
+
+	ip := net.ParseIP(cfg.IP)
+	laddr := net.UDPAddr{
+		IP:   ip,
+		Port: cfg.Port,
+	}
+	log.Println("Listening on", laddr.String())
 	conn, err := net.ListenUDP(laddr.Network(), &laddr)
 	if err != nil {
 		log.Println("Failed to listen:", err)
@@ -71,22 +83,20 @@ func srv(conn *net.UDPConn, request []byte, addr *net.UDPAddr) error {
 	}
 
 	defer func(tstart time.Time) {
-		log.Printf("Served %s in %s", name, time.Now().Sub(tstart))
+		// Verbose logging.
+		//log.Printf("Served %s in %s", name, time.Now().Sub(tstart))
 	}(time.Now())
 
 	var waitCh <-chan time.Time
 	nameStr := string(name)
 	if strings.Contains(nameStr, "reddit") {
-		//timer := time.NewTimer(blockedDelay)
 		timer := delayMgr.NextTimer()
 		defer timer.Stop()
 		waitCh = timer.C
 	}
 
-	return proxy(conn, request, addr, &net.UDPAddr{
-		IP:   []byte{8, 8, 8, 8},
-		Port: 53,
-	}, waitCh)
+	endpoint := cfg.DNSEndpoints[int(dnsID(request))%len(cfg.DNSEndpoints)]
+	return proxy(conn, request, addr, endpoint, waitCh)
 }
 
 func proxy(conn *net.UDPConn, request []byte, addr *net.UDPAddr, proxyAddr *net.UDPAddr, waitChan <-chan time.Time) error {
@@ -136,4 +146,43 @@ func domainOfDNSPacket(packet []byte) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// lookupDNSIPs converts a slice of hosts (which may be domains or raw IPs) and
+// converts them into a slice of UDPAddr, all with port 53.
+func lookupDNSIPs(hosts []string) ([]*net.UDPAddr, error) {
+	var result []*net.UDPAddr
+
+	for _, host := range hosts {
+		// Raw IP case.
+		ip := net.ParseIP(host)
+		if ip != nil {
+			result = append(result, &net.UDPAddr{
+				IP:   ip,
+				Port: 53,
+			})
+			continue
+		}
+
+		// Non-ip case.
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			return nil, fmt.Errorf("resolve non-ip %q: %v", host, err)
+		}
+		for _, ip := range ips {
+			result = append(result, &net.UDPAddr{
+				IP:   ip,
+				Port: 53,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+func dnsID(packet []byte) uint16 {
+	if len(packet) < 2 {
+		return 0
+	}
+	return uint16(packet[0]) | (uint16(packet[1]) << 8)
 }
