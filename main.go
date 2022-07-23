@@ -6,17 +6,19 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Config struct {
 	Port         int `default:"8053"`
 	IP           string
-	MetricsPort  int
+	MetricsPort  int `default:"8081"`
 	BlockedURLS  []string
 	DNSServers   []string
 	DNSEndpoints []*net.UDPAddr
@@ -36,7 +38,19 @@ var (
 
 func main() {
 	envconfig.MustProcess("", &cfg)
-	log.Printf("Configured: %v", cfg)
+	log.Printf("Configured: %+v", cfg)
+
+	// Serve metrics.
+	metricsSrv := &http.Server{
+		Handler:      promhttp.Handler(),
+		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.MetricsPort),
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+	go func() {
+		log.Printf("Listening and serving metrics on %s", metricsSrv.Addr)
+		log.Fatal(metricsSrv.ListenAndServe())
+	}()
 
 	dnsIPs, err := lookupDNSIPs(cfg.DNSServers)
 	if err != nil {
@@ -67,10 +81,13 @@ func main() {
 		}
 
 		go func() {
+			tstart := time.Now()
 			if err := srv(conn, buf[:n], addr); err != nil {
 				log.Println("Failed to serve:", err)
 			}
 			alloc.Put(buf)
+			domain, _ := domainOfDNSPacket(buf[:n])
+			ObserveRequestLatency(string(domain), err != nil, time.Now().Sub(tstart))
 		}()
 	}
 }

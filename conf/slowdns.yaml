@@ -17,12 +17,31 @@ spec:
   selector:
     app: slowdns
   sessionAffinity: None
-  loadBalancerIP: 127.0.0.1
+  # loadBalancerIP: 127.0.0.1
+  loadBalancerIP: 192.168.0.24
   externalTrafficPolicy: Local
   externalIPs:
   - 192.168.0.24  # My machine as configured.
   type: LoadBalancer
   # type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slowdns-metrics
+  namespace: pihole
+  labels:
+    app: slowdns
+spec:
+  ports:
+  - name: metrics
+    protocol: TCP
+    port: 8081
+    targetPort: metrics
+  selector:
+    app: slowdns
+  sessionAffinity: None
+  type: ClusterIP
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -49,6 +68,9 @@ spec:
         - containerPort: 8053
           name: dns-udp
           protocol: UDP
+        - containerPort: 8081
+          name: metrics
+          protocol: TCP
         env:
         - name: DNSSERVERS
           # value: "1.1.1.1"
@@ -57,3 +79,23 @@ spec:
           value: "pihole-dns-udp.pihole.svc.cluster.local"
         - name: PORT
           value: "8053"
+---
+# ServiceMonitor for metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: slowdns
+    release: prometheus
+  name: slowdns
+  namespace: monitoring
+spec:
+  endpoints:
+  - port: metrics
+  jobLabel: component
+  namespaceSelector:
+    matchNames:
+    - pihole
+  selector:
+    matchLabels:
+      app: slowdns
