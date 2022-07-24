@@ -58,7 +58,7 @@ spec:
             path: /health
             port: metrics
           initialDelaySeconds: 3
-          periodSeconds: 3
+          periodSeconds: 30
         env:
         - name: DNSSERVERS
           # value: "1.1.1.1"
