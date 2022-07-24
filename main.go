@@ -108,7 +108,8 @@ func srv(conn *net.UDPConn, request []byte, addr *net.UDPAddr) error {
 
 	var waitCh <-chan time.Time
 	nameStr := string(name)
-	if strings.Contains(nameStr, "reddit") {
+	if strings.Contains(nameStr, "reddit") ||
+		strings.Contains(nameStr, "news.ycombinator.com") {
 		timer := delayMgr.NextTimer()
 		defer timer.Stop()
 		waitCh = timer.C
