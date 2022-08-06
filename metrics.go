@@ -14,7 +14,10 @@ var (
 			Help:      "Latency of DNS requests in seconds",
 			Buckets:   []float64{0.001, 0.01, 0.1, 0.2, 0.4, 0.8, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0},
 		},
-		[]string{"is_error", "domain"},
+		[]string{
+			"is_error",
+			"domain",
+		},
 	)
 )
 
@@ -31,6 +34,6 @@ func ObserveRequestLatency(domain string, is_error bool, latency time.Duration) 
 	}
 	requestLatency.With(prometheus.Labels{
 		"is_error": is_error_label,
-		"domain":   domain,
+		// "domain":   domain,
 	}).Observe(latency.Seconds())
 }
