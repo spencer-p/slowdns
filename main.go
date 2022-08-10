@@ -109,11 +109,6 @@ func srv(conn *net.UDPConn, request []byte, addr *net.UDPAddr) error {
 		name = []byte("unknown.")
 	}
 
-	defer func(tstart time.Time) {
-		// Verbose logging.
-		//log.Printf("Served %s in %s", name, time.Now().Sub(tstart))
-	}(time.Now())
-
 	var waitCh <-chan time.Time
 	nameStr := string(name)
 	if strings.Contains(nameStr, "reddit") ||
