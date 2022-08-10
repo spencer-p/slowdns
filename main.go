@@ -72,6 +72,7 @@ func main() {
 	}
 	defer conn.Close()
 
+	var queuedIds sync.Map
 	for {
 		buf := alloc.Get().([]byte)
 		n, addr, err := conn.ReadFromUDP(buf)
@@ -83,6 +84,13 @@ func main() {
 		}
 
 		go func() {
+			// Drop any repeated in-flight traffic.
+			id := dnsID(buf[:n])
+			if _, alreadyProcessing := queuedIds.LoadOrStore(id, struct{}{}); alreadyProcessing {
+				return
+			}
+			defer queuedIds.Delete(id)
+
 			tstart := time.Now()
 			if err := srv(conn, buf[:n], addr); err != nil {
 				log.Println("Failed to serve:", err)
