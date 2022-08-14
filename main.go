@@ -19,7 +19,7 @@ type Config struct {
 	Port         int `default:"8053"`
 	IP           string
 	MetricsPort  int `default:"8081"`
-	BlockedURLS  []string
+	BlockedLists []string
 	DNSServers   []string
 	DNSEndpoints []*net.UDPAddr
 }
@@ -32,8 +32,9 @@ var (
 	alloc = sync.Pool{
 		New: func() interface{} { return make([]byte, bufsize) },
 	}
-	cfg      Config
-	delayMgr = &delayManager{now: time.Now}
+	cfg       Config
+	delayMgr  = &delayManager{now: time.Now}
+	blocklist Blocklist
 )
 
 func main() {
@@ -44,6 +45,12 @@ func main() {
 	}
 	cfg.DNSEndpoints = dnsIPs
 	log.Printf("Configured: %+v", cfg)
+
+	blocklist, err = LoadAllBlocklists(cfg.BlockedLists)
+	if err != nil {
+		log.Printf("Failed to load blocklist: %v", err)
+	}
+	log.Printf("Loaded %d items from blocklists", len(blocklist))
 
 	// Serve metrics and health.
 	mux := http.NewServeMux()
@@ -111,7 +118,8 @@ func srv(conn *net.UDPConn, request []byte, addr *net.UDPAddr) error {
 
 	var waitCh <-chan time.Time
 	nameStr := string(name)
-	if strings.Contains(nameStr, "reddit") ||
+	if blocklist.Blocked(nameStr) ||
+		strings.Contains(nameStr, "reddit") ||
 		strings.Contains(nameStr, "news.ycombinator.com") ||
 		strings.Contains(nameStr, "instagram") {
 		timer := delayMgr.NextTimer()

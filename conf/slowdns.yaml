@@ -62,11 +62,20 @@ spec:
         env:
         - name: DNSSERVERS
           # value: "1.1.1.1"
-          # Per # https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#services:
+          # Per https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#services:
           # DNS name is of the form "my-svc.my-namespace.svc.cluster-domain.example"
           value: "pihole-dns-udp.pihole.svc.cluster.local"
         - name: PORT
           value: "8053"
+        - name: BLOCKEDLISTS
+          value: "/etc/config/blocked.yaml"
+        volumeMounts:
+        - name: blocklist-volume
+          mountPath: /etc/config
+      volumes:
+      - name: blocklist-volume
+        configMap:
+          name: slowdns-blocklist
 ---
 # ServiceMonitor for metrics.
 apiVersion: monitoring.coreos.com/v1

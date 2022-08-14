@@ -16,7 +16,7 @@ var (
 		},
 		[]string{
 			"is_error",
-			"domain",
+			// "domain",
 		},
 	)
 )
