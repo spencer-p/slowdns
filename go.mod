@@ -1,6 +1,6 @@
 module github.com/spencer-p/slowdns
 
-go 1.17
+go 1.19
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

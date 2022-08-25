@@ -16,7 +16,7 @@ var (
 		},
 		[]string{
 			"is_error",
-			// "domain",
+			"block_level",
 		},
 	)
 )
@@ -27,13 +27,13 @@ func init() {
 	)
 }
 
-func ObserveRequestLatency(domain string, is_error bool, latency time.Duration) {
+func ObserveRequestLatency(block_level string, is_error bool, latency time.Duration) {
 	is_error_label := "false"
 	if is_error {
 		is_error_label = "true"
 	}
 	requestLatency.With(prometheus.Labels{
-		"is_error": is_error_label,
-		// "domain":   domain,
+		"is_error":    is_error_label,
+		"block_level": block_level,
 	}).Observe(latency.Seconds())
 }

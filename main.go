@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -14,15 +15,18 @@ import (
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/spencer-p/slowdns/pkg/dns"
 )
 
 type Config struct {
-	Port         int `default:"8053"`
-	IP           string
-	MetricsPort  int `default:"8081"`
-	BlockedLists []string
-	DNSServers   []string
-	DNSEndpoints []*net.UDPAddr
+	Port           int `default:"8053"`
+	IP             string
+	MetricsPort    int `default:"8081"`
+	SoftBlockLists []string
+	HardBlockLists []string
+	DNSServers     []string
+	DNSEndpoints   []*net.UDPAddr
 }
 
 const (
@@ -31,11 +35,12 @@ const (
 
 var (
 	alloc = sync.Pool{
-		New: func() interface{} { return make([]byte, bufsize) },
+		New: func() any { return make([]byte, bufsize) },
 	}
-	cfg       Config
-	delayMgr  = &delayManager{now: time.Now}
-	blocklist Blocklist
+	cfg           Config
+	delayMgr      = &delayManager{now: time.Now}
+	softBlocklist Blocklist
+	hardBlocklist Blocklist
 )
 
 func main() {
@@ -47,23 +52,24 @@ func main() {
 	cfg.DNSEndpoints = dnsIPs
 	log.Printf("Configured: %+v", cfg)
 
+	// This allows us to use the same binary as a health check.
+	// Example usage: IP=192.168.0.1 PORT=53 slowdns health
 	if len(os.Args) > 1 && os.Args[1] == "health" {
-		err := health(net.UDPAddr{
-			IP:   net.ParseIP(cfg.IP),
-			Port: cfg.Port,
-		})
-		if err != nil {
-			log.Fatalf("unhealthy: %v", err)
-		}
-		log.Println("ok")
+		execHealth(cfg)
 		return
 	}
 
-	blocklist, err = LoadAllBlocklists(cfg.BlockedLists)
+	softBlocklist, err = LoadAllBlocklists(cfg.SoftBlockLists)
 	if err != nil {
-		log.Printf("Failed to load blocklist: %v", err)
+		log.Printf("Failed to load soft blocklist: %v", err)
 	}
-	log.Printf("Loaded %d items from blocklists", len(blocklist))
+	log.Printf("Loaded %d items from soft blocklists", len(softBlocklist))
+
+	hardBlocklist, err = LoadAllBlocklists(cfg.HardBlockLists)
+	if err != nil {
+		log.Printf("Failed to load hard blocklist: %v", err)
+	}
+	log.Printf("Loaded %d items from hard blocklists", len(hardBlocklist))
 
 	// Serve metrics and health.
 	mux := http.NewServeMux()
@@ -111,47 +117,60 @@ func main() {
 			}
 			defer queuedIds.Delete(id)
 
+			packet, err := dns.NewPacket(buf[:n])
+			if err != nil {
+				log.Println("Ignoring request: ", err)
+			}
+			name := packet.Domains()[0] // I have only ever observed one name.
+
+			blockLevel := "none"
+			if softBlocklist.Blocked(name) ||
+				strings.Contains(name, "reddit") ||
+				strings.Contains(name, "news.ycombinator.com") ||
+				strings.Contains(name, "instagram") {
+				blockLevel = "soft"
+			}
+			if hardBlocklist.Blocked(name) {
+				blockLevel = "hard"
+			}
+
+			var srv srvFunc
+			switch blockLevel {
+			case "none":
+				srv = proxy
+			case "soft":
+				srv = srvSlow
+			case "hard":
+				srv = srvMITM
+			}
+
 			tstart := time.Now()
-			if err := srv(conn, buf[:n], addr); err != nil {
+			if err := srv(conn, packet, addr); err != nil {
 				log.Println("Failed to serve:", err)
 			}
 			alloc.Put(buf)
-			domain, _ := domainOfDNSPacket(buf[:n])
-			ObserveRequestLatency(string(domain), err != nil, time.Now().Sub(tstart))
+			ObserveRequestLatency(blockLevel, err != nil, time.Now().Sub(tstart))
 		}()
 	}
 }
 
-func srv(conn *net.UDPConn, request []byte, addr *net.UDPAddr) error {
-	name, err := domainOfDNSPacket(request)
-	if err != nil {
-		log.Println("Cannot determine requested domain:", err)
-		name = []byte("unknown.")
-	}
+type srvFunc func(*net.UDPConn, dns.Packet, *net.UDPAddr) error
 
-	var waitCh <-chan time.Time
-	nameStr := string(name)
-	if blocklist.Blocked(nameStr) ||
-		strings.Contains(nameStr, "reddit") ||
-		strings.Contains(nameStr, "news.ycombinator.com") ||
-		strings.Contains(nameStr, "instagram") {
-		timer := delayMgr.NextTimer()
-		defer timer.Stop()
-		waitCh = timer.C
-	}
-
-	endpoint := cfg.DNSEndpoints[int(dnsID(request))%len(cfg.DNSEndpoints)]
-	return proxy(conn, request, addr, endpoint, waitCh)
+func srvSlow(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
+	timer := delayMgr.NextTimer()
+	<-timer.C
+	return proxy(conn, packet, addr)
 }
 
-func proxy(conn *net.UDPConn, request []byte, addr *net.UDPAddr, proxyAddr *net.UDPAddr, waitChan <-chan time.Time) error {
+func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
+	proxyAddr := cfg.DNSEndpoints[int(packet.ID())%len(cfg.DNSEndpoints)]
 	proxyConn, err := net.DialUDP("udp", nil, proxyAddr)
 	if err != nil {
 		return err
 	}
 	proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	_, err = proxyConn.Write(request)
+	_, err = proxyConn.Write(packet.Raw())
 	if err != nil {
 		return err
 	}
@@ -163,12 +182,35 @@ func proxy(conn *net.UDPConn, request []byte, addr *net.UDPAddr, proxyAddr *net.
 		return err
 	}
 
-	if waitChan != nil {
-		<-waitChan
-	}
 	// Flip the z bit, for fun. This makes query responses more identifiable.
 	buf[3] ^= 0x40
 	_, err = conn.WriteToUDP(buf[:n], addr)
+	return err
+}
+
+func srvMITM(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
+	resp := bytes.NewBuffer(nil)
+	raw := packet.Raw()
+	query := packet.Query()
+	classType := query[len(query)-4:]
+
+	resp.Write(raw[:2])            // ID.
+	resp.Write([]byte{0x81, 0xc0}) // Standard query response + Z bit.
+	resp.Write(raw[4:6])           // Query count.
+	resp.Write([]byte{0, 1})       // Response count.
+	resp.Write([]byte{0, 0})       // Authority response count.
+	resp.Write([]byte{0, 1})       // Non authoratative response count.
+	resp.Write(query)              // Repeat the whole query back.
+	resp.Write([]byte{0xc0, 0x0c}) // First response.
+	resp.Write(classType)          // Class and type of response.
+	resp.Write([]byte{
+		0, 0, 0, 120, // TTL, 2 minutes.
+		0, 4, // Four bytes of address, IPV4.
+	})
+	resp.Write(hardBlocklist.IP(packet.Domains()[0])) // The address to block with??
+	resp.Write(packet.AdditionalRecords())            // Other garbage. Doesn't matter. This response is fake anyway.
+
+	_, err := conn.WriteToUDP(resp.Bytes(), addr)
 	return err
 }
 
@@ -251,6 +293,17 @@ func selfHealth() error {
 		IP:   net.IPv4(127, 0, 0, 1),
 		Port: cfg.Port,
 	})
+}
+
+func execHealth(cfg Config) {
+	err := health(net.UDPAddr{
+		IP:   net.ParseIP(cfg.IP),
+		Port: cfg.Port,
+	})
+	if err != nil {
+		log.Fatalf("unhealthy: %v", err)
+	}
+	log.Println("ok")
 }
 
 func health(addr net.UDPAddr) error {

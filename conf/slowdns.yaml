@@ -61,21 +61,28 @@ spec:
           periodSeconds: 30
         env:
         - name: DNSSERVERS
-          # value: "1.1.1.1"
+          value: "1.1.1.1,1.0.0.1"
           # Per https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#services:
           # DNS name is of the form "my-svc.my-namespace.svc.cluster-domain.example"
-          value: "pihole-dns-udp.pihole.svc.cluster.local"
+          #value: "pihole-dns-udp.pihole.svc.cluster.local"
         - name: PORT
           value: "8053"
-        - name: BLOCKEDLISTS
-          value: "/etc/config/blocked.yaml"
+        - name: SOFTBLOCKLISTS
+          value: "/etc/config/blocked/blocked.yaml"
+        - name: HARDBLOCKLISTS
+          value: "/etc/config/localnet/localnet,https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
         volumeMounts:
         - name: blocklist-volume
-          mountPath: /etc/config
+          mountPath: /etc/config/blocked
+        - name: localnet-volume
+          mountPath: /etc/config/localnet
       volumes:
       - name: blocklist-volume
         configMap:
           name: slowdns-blocklist
+      - name: localnet-volume
+        configMap:
+          name: slowdns-localnet
 ---
 # ServiceMonitor for metrics.
 apiVersion: monitoring.coreos.com/v1
@@ -114,3 +121,13 @@ spec:
     app: slowdns
   sessionAffinity: None
   type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowdns-localnet
+  namespace: pihole
+data:
+  localnet: |
+    192.168.0.24 icebox.local
+    192.168.0.24 icebox.spencerjp.dev
