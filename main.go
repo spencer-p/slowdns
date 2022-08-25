@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,18 @@ func main() {
 	}
 	cfg.DNSEndpoints = dnsIPs
 	log.Printf("Configured: %+v", cfg)
+
+	if len(os.Args) > 1 && os.Args[1] == "health" {
+		err := health(net.UDPAddr{
+			IP:   net.ParseIP(cfg.IP),
+			Port: cfg.Port,
+		})
+		if err != nil {
+			log.Fatalf("unhealthy: %v", err)
+		}
+		log.Println("ok")
+		return
+	}
 
 	blocklist, err = LoadAllBlocklists(cfg.BlockedLists)
 	if err != nil {
@@ -234,17 +247,20 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func selfHealth() error {
+	return health(net.UDPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: cfg.Port,
+	})
+}
+
+func health(addr net.UDPAddr) error {
 	// A DNS requet for google.com IP.
 	req := []byte{0x24, 0x58, 0x1, 0x20, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
 		0x6, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x3, 0x63, 0x6f, 0x6d, 0x0, 0x0,
 		0x1, 0x0, 0x1, 0x0, 0x0, 0x29, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xc, 0x0,
 		0xa, 0x0, 0x8, 0xf2, 0xf4, 0x43, 0x16, 0xc, 0x5a, 0x67, 0x51}
 
-	self := net.UDPAddr{
-		IP:   net.IPv4(127, 0, 0, 1),
-		Port: cfg.Port,
-	}
-	conn, err := net.DialUDP("udp", nil, &self)
+	conn, err := net.DialUDP("udp", nil, &addr)
 	if err != nil {
 		return err
 	}
