@@ -110,18 +110,18 @@ func main() {
 		}
 
 		go func() {
-			// Drop any repeated in-flight traffic.
-			id := dnsID(buf[:n])
-			if _, alreadyProcessing := queuedIds.LoadOrStore(id, struct{}{}); alreadyProcessing {
-				return
-			}
-			defer queuedIds.Delete(id)
-
 			packet, err := dns.NewPacket(buf[:n])
 			if err != nil {
 				log.Println("Ignoring request: ", err)
 			}
 			name := packet.Domains()[0] // I have only ever observed one name.
+
+			// Drop any repeated in-flight traffic.
+			id := packet.ID()
+			if _, alreadyProcessing := queuedIds.LoadOrStore(id, struct{}{}); alreadyProcessing {
+				return
+			}
+			defer queuedIds.Delete(id)
 
 			blockLevel := "none"
 			if softBlocklist.Blocked(name) ||
@@ -214,29 +214,6 @@ func srvMITM(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 	return err
 }
 
-// domainOfDNSPacket returns the domain name being queried in a DNS packet.
-func domainOfDNSPacket(packet []byte) ([]byte, error) {
-	if len(packet) <= 12 {
-		return nil, fmt.Errorf("packet cannot be a DNS packet, has %d bytes, needs 12", len(packet))
-	}
-
-	// I do apologize for the off-by-one issues.
-	i := 0
-	for 12+i < len(packet) && packet[12+i] != 0 {
-		i += int(packet[12+i]) + 1
-	}
-
-	data := make([]byte, i-1)
-	for j := range data {
-		data[j] = packet[12+j+1]
-		if data[j] < '0' { // First ascii character valid for domain name.
-			data[j] = '.'
-		}
-	}
-
-	return data, nil
-}
-
 // lookupDNSIPs converts a slice of hosts (which may be domains or raw IPs) and
 // converts them into a slice of UDPAddr, all with port 53.
 func lookupDNSIPs(hosts []string) ([]*net.UDPAddr, error) {
@@ -267,13 +244,6 @@ func lookupDNSIPs(hosts []string) ([]*net.UDPAddr, error) {
 	}
 
 	return result, nil
-}
-
-func dnsID(packet []byte) uint16 {
-	if len(packet) < 2 {
-		return 0
-	}
-	return uint16(packet[0]) | (uint16(packet[1]) << 8)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
