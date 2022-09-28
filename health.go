@@ -8,6 +8,8 @@ import (
 	"net/http"
 )
 
+var quitquitquit bool
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	err := selfHealth()
 	if err != nil {
@@ -20,7 +22,17 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "ok\n")
 }
 
+func quitHandler(w http.ResponseWriter, r *http.Request) {
+	quitquitquit = true
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "ok\n")
+}
+
 func selfHealth() error {
+	if quitquitquit {
+		return errors.New("quitquitquit")
+	}
+
 	return health(net.UDPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
 		Port: cfg.Port,

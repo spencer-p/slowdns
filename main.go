@@ -60,13 +60,13 @@ func main() {
 
 	softBlocklist, err = LoadAllBlocklists(cfg.SoftBlockLists)
 	if err != nil {
-		log.Printf("Failed to load soft blocklist: %v", err)
+		log.Fatalf("Failed to load soft blocklist: %v", err)
 	}
 	log.Printf("Loaded %d items from soft blocklists", len(softBlocklist))
 
 	hardBlocklist, err = LoadAllBlocklists(cfg.HardBlockLists)
 	if err != nil {
-		log.Printf("Failed to load hard blocklist: %v", err)
+		log.Fatalf("Failed to load hard blocklist: %v", err)
 	}
 	log.Printf("Loaded %d items from hard blocklists", len(hardBlocklist))
 
@@ -80,6 +80,7 @@ func main() {
 	}
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/quitquitquit", quitHandler)
 	go func() {
 		log.Printf("Listening and serving metrics on %s", metricsSrv.Addr)
 		log.Fatal(metricsSrv.ListenAndServe())
