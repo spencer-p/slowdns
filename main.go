@@ -26,6 +26,7 @@ type Config struct {
 	HardBlockLists []string
 	DNSServers     []string
 	DNSEndpoints   []*net.UDPAddr
+	Verbose        bool
 }
 
 const (
@@ -117,6 +118,9 @@ func main() {
 				log.Println("Ignoring request: ", err)
 			}
 			name := packet.Domains()[0] // I have only ever observed one name.
+			if cfg.Verbose {
+				log.Println(name)
+			}
 
 			// Drop any repeated in-flight traffic.
 			id := packet.ID()
@@ -139,11 +143,16 @@ func main() {
 				srv = srvMITM
 			}
 
+			tsrv_start := time.Now()
 			if err := srv(conn, packet, addr); err != nil {
 				log.Println("Failed to serve:", err)
 			}
 			alloc.Put(buf)
-			ObserveRequestLatency(blockLevel, err != nil, time.Now().Sub(tstart))
+
+			tend := time.Now()
+			totalLatency := tend.Sub(tstart)
+			ObserveRequestLatency(blockLevel, err != nil, totalLatency)
+			ObserveLatencyOverhead(blockLevel, err != nil, totalLatency-tend.Sub(tsrv_start))
 		}()
 	}
 }

@@ -71,6 +71,8 @@ spec:
           value: "/etc/config/blocked/blocked.yaml"
         - name: HARDBLOCKLISTS
           value: "/etc/config/localnet/localnet,https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+        - name: VERBOSE
+          value: "false"
         volumeMounts:
         - name: blocklist-volume
           mountPath: /etc/config/blocked
