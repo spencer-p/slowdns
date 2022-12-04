@@ -19,12 +19,23 @@ func NewPacket(buf []byte) (Packet, error) {
 	return Packet{raw: buf}, nil
 }
 
+func (p Packet) Copy() Packet {
+	raw := make([]byte, len(p.raw))
+	copy(raw, p.raw)
+	return Packet{raw: raw}
+}
+
 // ID returns the unique ID of the packet.
 func (p Packet) ID() uint16 {
 	if len(p.raw) < 2 {
 		return 0
 	}
 	return uint16(p.raw[0])<<8 | uint16(p.raw[1])
+}
+
+func (p Packet) SetID(id uint16) {
+	p.raw[0] = uint8(id >> 8)
+	p.raw[1] = uint8(id)
 }
 
 // Questions returns the number of questions in the query.
@@ -88,4 +99,18 @@ func (p Packet) AdditionalRecords() []byte {
 	}
 	additionalStart := 12 + i + 4 + 1 // Yep.
 	return p.raw[additionalStart:]
+}
+
+func (p Packet) TTL() uint16 {
+	// Scrub through the domain name.
+	i := 0
+	for 12+i < len(p.raw) && p.raw[12+i] != 0 {
+		i += int(p.raw[12+i]) + 1
+	}
+	additionalStart := 12 + i + 4 + 1 // Maybe I'll refact next time.
+	ttlStart := additionalStart + 8   // yeeeep.
+	if ttlStart >= len(p.raw) {
+		return 0 // Not a response packet, it seems.
+	}
+	return uint16(p.raw[ttlStart])<<8 + uint16(p.raw[ttlStart+1])
 }
