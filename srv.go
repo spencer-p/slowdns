@@ -19,7 +19,7 @@ func srvSlow(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 }
 
 func proxyWithCache(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
-	response, ok := cache.Fetch(packet.Domains()[0])
+	response, ok := cache.Fetch(packet)
 	if !ok {
 		return proxy(conn, packet, addr)
 	}
