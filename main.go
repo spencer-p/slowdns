@@ -130,7 +130,7 @@ func main() {
 			defer queuedIds.Delete(id)
 
 			blockLevel := "none"
-			var srv srvFunc = proxyWithCache
+			var srv srvFunc = proxy
 			if softBlocklist.Blocked(name) ||
 				strings.Contains(name, "reddit") ||
 				strings.Contains(name, "news.ycombinator.com") ||

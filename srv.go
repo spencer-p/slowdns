@@ -8,24 +8,12 @@ import (
 	"github.com/spencer-p/slowdns/pkg/dns"
 )
 
-var cache = NewExpiryCache()
-
 type srvFunc func(*net.UDPConn, dns.Packet, *net.UDPAddr) error
 
 func srvSlow(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 	timer := delayMgr.NextTimer()
 	<-timer.C
 	return proxy(conn, packet, addr)
-}
-
-func proxyWithCache(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
-	response, ok := cache.Fetch(packet)
-	if !ok {
-		return proxy(conn, packet, addr)
-	}
-	response.SetID(packet.ID())
-	_, err := conn.WriteToUDP(response.Raw(), addr)
-	return err
 }
 
 func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
@@ -47,15 +35,6 @@ func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 	if err != nil {
 		return err
 	}
-
-	// Store to the cache in parallel to writing response.
-	go func() {
-		packet, err := dns.NewPacket(buf[:n])
-		if err != nil {
-			return
-		}
-		cache.Store(packet)
-	}()
 
 	// Flip the z bit, for fun. This makes query responses more identifiable.
 	buf[3] ^= 0x40
