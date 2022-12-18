@@ -14,9 +14,17 @@ gratification.
 
 The server can be built and run with
 
-```
+```sh
 go install github.com/spencer-p/slowdns
 export PORT=53 DNSSERVERS=8.8.8.8 slowdns
+```
+
+Alternatively, you can use the provided Dockerfile and Makefile:
+
+```sh
+make docker-run
+# In another tab...
+dig example.com @localhost
 ```
 
 See conf/ for example configuration for Kubernetes.
