@@ -119,7 +119,7 @@ func main() {
 			}
 			name := packet.Domains()[0] // I have only ever observed one name.
 			if cfg.Verbose {
-				log.Println(name)
+				log.Printf("[%s] %s", addr.IP.String(), name)
 			}
 
 			// Drop any repeated in-flight traffic.
