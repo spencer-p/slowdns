@@ -118,9 +118,6 @@ func main() {
 				log.Println("Ignoring request: ", err)
 			}
 			name := packet.Domains()[0] // I have only ever observed one name.
-			if cfg.Verbose {
-				log.Printf("[%s] %s", addr.IP.String(), name)
-			}
 
 			// Drop any repeated in-flight traffic.
 			id := packet.ID()
@@ -141,6 +138,10 @@ func main() {
 			if hardBlocklist.Blocked(name) {
 				blockLevel = "hard"
 				srv = srvMITM
+			}
+
+			if cfg.Verbose {
+				log.Printf("[%s] [%s] %s", addr.IP.String(), blockLevel, name)
 			}
 
 			tsrv_start := time.Now()
