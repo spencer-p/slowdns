@@ -25,6 +25,7 @@ type Config struct {
 	SoftBlockLists []string
 	HardBlockLists []string
 	DNSServers     []string
+	Allowlist      []string
 	DNSEndpoints   []*net.UDPAddr
 	Verbose        bool
 }
@@ -70,6 +71,11 @@ func main() {
 		log.Fatalf("Failed to load hard blocklist: %v", err)
 	}
 	log.Printf("Loaded %d items from hard blocklists", len(hardBlocklist))
+
+	allowlist := make(map[string]struct{})
+	for _, ip := range cfg.Allowlist {
+		allowlist[ip] = struct{}{}
+	}
 
 	// Serve metrics and health.
 	mux := http.NewServeMux()
@@ -127,11 +133,12 @@ func main() {
 			defer queuedIds.Delete(id)
 
 			blockLevel := "none"
+			_, allowlisted := allowlist[addr.IP.String()]
 			var srv srvFunc = proxy
-			if softBlocklist.Blocked(name) ||
+			if !allowlisted && (softBlocklist.Blocked(name) ||
 				strings.Contains(name, "reddit") ||
 				strings.Contains(name, "news.ycombinator.com") ||
-				strings.Contains(name, "instagram") {
+				strings.Contains(name, "instagram")) {
 				blockLevel = "soft"
 				srv = srvSlow
 			}
