@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"log"
 	"net"
 	"time"
 
@@ -13,10 +14,14 @@ type srvFunc func(*net.UDPConn, dns.Packet, *net.UDPAddr) error
 func srvSlow(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 	timer := delayMgr.NextTimer()
 	<-timer.C
-	return proxy(conn, packet, addr)
+	return proxy(conn, packet, addr, true)
 }
 
-func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
+func proxyNormal(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
+	return proxy(conn, packet, addr, false)
+}
+
+func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr, spoof bool) error {
 	proxyAddr := cfg.DNSEndpoints[int(packet.ID())%len(cfg.DNSEndpoints)]
 	proxyConn, err := net.DialUDP("udp", nil, proxyAddr)
 	if err != nil {
@@ -38,6 +43,16 @@ func proxy(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
 
 	// Flip the z bit, for fun. This makes query responses more identifiable.
 	buf[3] ^= 0x40
+	if spoof {
+		// If spoofing, set the TTL to 5 seconds to force the client to
+		// repeatedly sit through the waiting period.
+		packet, err := dns.NewPacket(buf[:n])
+		if err != nil {
+			log.Printf("dns reponse invalid: %v", err)
+		} else {
+			packet.SetTTL(5)
+		}
+	}
 	_, err = conn.WriteToUDP(buf[:n], addr)
 	return err
 }

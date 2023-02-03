@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 )
@@ -88,4 +89,54 @@ func (p Packet) AdditionalRecords() []byte {
 	}
 	additionalStart := 12 + i + 4 + 1 // Yep.
 	return p.raw[additionalStart:]
+}
+
+func (p Packet) TTL() uint32 {
+	// Only fetch the first TTL due to laziness.
+	// Really, this is the wrong API becauase there can be many answers.
+	i, ok := p.nextAnswer(0)
+	if !ok {
+		return 0
+	}
+	// There are six bytes representing name, type, and class.
+	// TTL follows immediately.
+	return binary.BigEndian.Uint32(p.raw[i+6 : i+6+4])
+}
+
+func (p Packet) SetTTL(ttl uint32) {
+	i, ok := p.nextAnswer(0)
+	for ok {
+		binary.BigEndian.PutUint32(p.raw[i+6:i+6+4], ttl)
+		i, ok = p.nextAnswer(i)
+	}
+}
+
+func (p Packet) startOfQuery() int {
+	return 12
+}
+
+func (p Packet) domainNameLength() int {
+	i := p.startOfQuery()
+	for i < len(p.raw) && p.raw[i] != 0 {
+		i += int(p.raw[i]) + 1
+	}
+	return i - p.startOfQuery()
+}
+
+func (p Packet) nextAnswer(prevAnswer int) (int, bool) {
+	if prevAnswer == 0 {
+		// The query is comprised of the domain and four bytes representing type and
+		// class. Everything after the query is the answer.
+		result := p.startOfQuery() + p.domainNameLength() + 4 + 1
+		return result, result < len(p.raw)
+	}
+
+	length := int(binary.BigEndian.Uint16(p.raw[prevAnswer+10 : prevAnswer+12]))
+	result := prevAnswer + 12 + length
+
+	if result >= len(p.raw) {
+		return 0, false
+	}
+
+	return result, true
 }

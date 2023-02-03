@@ -134,7 +134,7 @@ func main() {
 
 			blockLevel := "none"
 			_, allowlisted := allowlist[addr.IP.String()]
-			var srv srvFunc = proxy
+			var srv srvFunc = proxyNormal
 			if !allowlisted && (softBlocklist.Blocked(name) ||
 				strings.Contains(name, "reddit") ||
 				strings.Contains(name, "news.ycombinator.com") ||
