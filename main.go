@@ -39,7 +39,7 @@ var (
 		New: func() any { return make([]byte, bufsize) },
 	}
 	cfg           Config
-	delayMgr      = &delayManager{now: time.Now}
+	delayMgr      = &multiDelayManager{now: time.Now}
 	softBlocklist Blocklist
 	hardBlocklist Blocklist
 )

@@ -12,7 +12,7 @@ import (
 type srvFunc func(*net.UDPConn, dns.Packet, *net.UDPAddr) error
 
 func srvSlow(conn *net.UDPConn, packet dns.Packet, addr *net.UDPAddr) error {
-	timer := delayMgr.NextTimer()
+	timer := delayMgr.NextTimer(packet.Domains()[0])
 	<-timer.C
 	return proxy(conn, packet, addr, true)
 }
