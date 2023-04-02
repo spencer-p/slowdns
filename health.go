@@ -14,11 +14,13 @@ var quitquitquit bool
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	err := selfHealth()
 	if err != nil {
+		ObserveHealthCheck(false)
 		log.Printf("Failed healthcheck: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, "Failed to issue DNS request to self: %v\n", err)
 		return
 	}
+	ObserveHealthCheck(true)
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "ok\n")
 }

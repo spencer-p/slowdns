@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,12 +32,23 @@ var (
 			"block_level",
 		},
 	)
+	healthCheckCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "health_requests",
+			Subsystem: "slowdns",
+			Help:      "Results of requests to /health",
+		},
+		[]string{
+			"ok",
+		},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(
 		requestLatency,
 		requestOverheadLatency,
+		healthCheckCounter,
 	)
 }
 
@@ -60,4 +72,10 @@ func ObserveLatencyOverhead(block_level string, is_error bool, latency time.Dura
 		"is_error":    is_error_label,
 		"block_level": block_level,
 	}).Observe(latency.Seconds())
+}
+
+func ObserveHealthCheck(success bool) {
+	healthCheckCounter.With(prometheus.Labels{
+		"ok": fmt.Sprintf("%t", success),
+	}).Inc()
 }
