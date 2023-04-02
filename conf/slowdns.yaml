@@ -33,7 +33,7 @@ metadata:
   labels:
     app: slowdns
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -44,7 +44,7 @@ spec:
         app: slowdns
     spec:
       containers:
-      - name: surfdash
+      - name: slowdns
         image: ko://github.com/spencer-p/slowdns
         ports:
         - containerPort: 8053
