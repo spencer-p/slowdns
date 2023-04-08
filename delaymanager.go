@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,16 +23,13 @@ func (m *delayManager) NextTimer() *time.Timer {
 }
 
 type multiDelayManager struct {
-	subManagers map[string]*delayManager
+	subManagers sync.Map // Used as map[string]*delayManager
 	now         func() time.Time
 }
 
 func (m *multiDelayManager) NextTimer(key string) *time.Timer {
 	if m == nil {
 		panic(fmt.Errorf("cannot get next timer for nil multiDelayManager"))
-	}
-	if m.subManagers == nil {
-		m.subManagers = make(map[string]*delayManager)
 	}
 
 	// If we have requests for a.foo.com and b.foo.com, time them both on
@@ -42,10 +40,13 @@ func (m *multiDelayManager) NextTimer(key string) *time.Timer {
 		key = components[n-2] + components[n-1]
 	}
 
-	subManager, ok := m.subManagers[key]
+	subManagerUntyped, ok := m.subManagers.Load(key)
+	var subManager *delayManager
 	if !ok {
 		subManager = &delayManager{now: m.now}
-		m.subManagers[key] = subManager
+		m.subManagers.Store(key, subManager)
+	} else {
+		subManager = subManagerUntyped.(*delayManager)
 	}
 
 	return subManager.NextTimer()
