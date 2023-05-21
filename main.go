@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strings"
 	"sync"
@@ -88,6 +89,7 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/quitquitquit", quitHandler)
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	go func() {
 		log.Printf("Listening and serving metrics on %s", metricsSrv.Addr)
 		log.Fatal(metricsSrv.ListenAndServe())
