@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"time"
 )
 
 var quitquitquit bool
@@ -69,6 +70,7 @@ func health(addr net.UDPAddr) error {
 	if err != nil {
 		return err
 	}
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	_, err = conn.Write(req)
 	if err != nil {
 		return err
